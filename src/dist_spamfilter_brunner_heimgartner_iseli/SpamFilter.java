@@ -14,15 +14,31 @@ public class SpamFilter {
 	private SpamFilterData data;
 	private String pathToHamEmails;
 	private String pathToSpamEmails;
+	private String pathToSpamCalibrationMails;
+	private String pathToHamCalibrationMails;
 
-	public SpamFilter(String pathToHams, String pathToSpams, String pathToHamCalibrationMails,
-			String pathToSpamCalibrationMails) {
+	public SpamFilter(String pathToHams, String pathToSpams, String pathToSpamCalibrationMails,
+			String pathToHamCalibrationMails) {
 		data = new SpamFilterData();
 		this.pathToHamEmails = pathToHams;
 		this.pathToSpamEmails = pathToSpams;
-		learn();
-		calibrate(pathToHamCalibrationMails, pathToSpamCalibrationMails);
+		this.pathToSpamCalibrationMails = pathToSpamCalibrationMails;
+		this.pathToHamCalibrationMails = pathToHamCalibrationMails;
 	}
+
+	/**
+	 * 
+	 * @param desiredQuality
+	 *            a value in [0..1] with the desired quality
+	 */
+	public void startCalculation(double desiredQuality) {
+		// while (desiredQuality < threshold) {
+		System.out.println("learning...");
+		learn();
+		System.out.println("calibrating...");
+		calibrate();
+	}
+	// }
 
 	public BigDecimal checkEmail(File email) {
 		Set<String> wordsInEmail = new HashSet<>();
@@ -33,19 +49,17 @@ public class SpamFilter {
 		} catch (FileNotFoundException e) {
 			e.printStackTrace();
 		}
-		wordsInEmail.forEach(word -> {
-			System.out.println(word);
-		});
-
 		return pOfEmail;
 
 	}
 
 	private void learn() {
 		try {
+			System.out.println("reading for learn...");
 			readSpams();
 			readHams();
 
+			System.out.println("synchronizing for learn...");
 			synchronizeSpamWords();
 			synchronizeHamWords();
 
@@ -54,26 +68,43 @@ public class SpamFilter {
 		}
 	}
 
-	private void calibrate(String pathToHamCalibrationMails, String pathToSpamCalibrationMails) {
-		calibrateWords(pathToSpamCalibrationMails);
-		calibrateWords(pathToHamCalibrationMails);
+	private void calibrate() {
+		List<BigDecimal> pOfSpams = calibrateWords(pathToSpamCalibrationMails);
+		List<BigDecimal> pOfHams = calibrateWords(pathToHamCalibrationMails);
+
+		double d = 0.5;
+		filterForPercentage(pOfSpams, d);
+		filterForPercentage(pOfHams, d);
+		d = 0.95;
+		filterForPercentage(pOfSpams, d);
+		filterForPercentage(pOfHams, d);
+		d = 0.97;
+		filterForPercentage(pOfSpams, d);
+		filterForPercentage(pOfHams, d);
+		d = 0.99;
+		filterForPercentage(pOfSpams, d);
+		filterForPercentage(pOfHams, d);
+
 	}
 
-	private void calibrateWords(String pathToCalibrationMails) {
-		File[] filesInCalibration = new File(pathToCalibrationMails).listFiles();
+	private void filterForPercentage(List<BigDecimal> ps, double d) {
+		System.out.println("filtering for " + d * 100 + "% mails...");
+		long amountOf99PercentageSpamClassifications = ps.stream().filter(probability -> {
+			return probability.doubleValue() >= d;
+		}).count();
+		System.out.println(">=" + d * 100 + "%: " + amountOf99PercentageSpamClassifications + " out of " + ps.size());
+	}
 
-		for (int j = 0; j < 5; j++) {
-			System.out.println("alpha set to " + data.getAlpha());
-			List<BigDecimal> pOfEmails = new ArrayList<>();
-			for (int i = 0; i < filesInCalibration.length; i++) {
-				BigDecimal pOfEmail = checkEmail(filesInCalibration[i]);
-				pOfEmails.add(pOfEmail);
-			}
-			BigDecimal maxP = pOfEmails.stream().max((b1, b2) -> b1.compareTo(b2)).get();
-			BigDecimal minP = pOfEmails.stream().min((b1, b2) -> b1.compareTo(b2)).get();
-			System.out.println("max p: " + maxP + " min p: " + minP);
-			data.setAlpha(data.getAlpha().divide(BigDecimal.TEN));
+	private List<BigDecimal> calibrateWords(String pathToCalibrationMails) {
+		System.out.println("calibrating words for " + pathToCalibrationMails + "...");
+		File[] filesInCalibration = new File(pathToCalibrationMails).listFiles();
+		List<BigDecimal> pOfEmails = new ArrayList<>();
+		for (int i = 0; i < filesInCalibration.length; i++) {
+			BigDecimal pOfEmail = checkEmail(filesInCalibration[i]);
+			pOfEmails.add(pOfEmail);
 		}
+		return pOfEmails;
+
 	}
 
 	private void synchronizeHamWords() {
@@ -111,4 +142,5 @@ public class SpamFilter {
 	public void setData(SpamFilterData data) {
 		this.data = data;
 	}
+
 }
